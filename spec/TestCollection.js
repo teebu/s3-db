@@ -24,23 +24,24 @@ const goodConfig = new Config({});
 const fqn = {name:'test',prefix:'test.dev-'}
 
 describe('Collection', () => {
+
   const findDocumentsResponse = [];
-  const testSerializer = {
+  const testSerializer        = {
     serialize: toSerialize => JSON.stringify(toSerialize),
     deserialize: toDeserialize => JSON.parse(toDeserialize),
   }
 
   const testProvider = {
     collection: {
+      getDocumentHead: (fqn,docId) => Promise.resolve({md5:'1234567890'}),
       findDocuments: () => Promise.resolve(findDocumentsResponse),
       getDocument: (name,id) => Promise.resolve({id:id}),
       deleteDocument: (name,id) => Promise.resolve(),
-      putDocument: request => {
-        return Promise.resolve({
-          ETag: "'asdfasdfasdf'",
-          Body: request.body
-        })
-      },
+      putDocument: request => Promise.resolve({
+        ETag: "'asdfasdfasdf'",
+        MetaData: request.metadata,
+        Body: request.body
+      }),
       copyDocument: (source,newId) => {
         return Promise.resolve({
           CopyObjectResult: {
@@ -48,6 +49,14 @@ describe('Collection', () => {
             LastModified: ''
           }
         });
+      },
+      buildDocumentMetaData: document => {
+       const metadata = document.Metadata || {};
+        
+        Object.keys(metadata).forEach( key => metadata[key] = JSON.parse(metadata[key]) );
+        metadata['ETag']  = "'1234567890'";
+
+        return metadata;
       },
       buildListMetaData: () => {return {}}
     }
@@ -58,13 +67,14 @@ describe('Collection', () => {
 
       const document = data.Body ? JSON.parse(data.Body) : data;
     
-      document.getId      = () => 'x';
-      document.isModified = () => true;
-      document.save       = () => document;
-      document.refresh    = () => document;
-      document.copyTo     = (collection,id) => document;
+      document.getId       = () => 'x';
+      document.isModified  = () => true;
+      document.getMetadata = () => Utils.getMetaData(document);
+      document.save        = () => document;
+      document.refresh     = () => document;
+      document.copyTo      = (collection,id) => document;
 
-      Utils.setMetaData(document,{eTag:'1234567890',collectionFQN:'x'});
+      Utils.setMetaData(document,Object.assign(data.MetaData || {}, {eTag:'1234567890',collectionFQN:'x'}));
 
       return document;
     }
@@ -101,7 +111,7 @@ describe('Collection', () => {
     const collection = new Collection(fqn, goodConfig, testProvider, testSerializer, testDocumentFactory);
 
     it('Check signature',() => expect(collection)
-      .to.have.all.keys('getName','getFQN','getDocument','deleteDocument','find','saveDocument','subCollection','copy'));
+      .to.have.all.keys('getName','getFQN','getDocument','deleteDocument','find','saveDocument','subCollection','copy','exists','getHead'));
   })
 
   describe('#subCollection() Positive', () => {
@@ -109,7 +119,7 @@ describe('Collection', () => {
     const subCollection = collection.subCollection('child');
 
     it('Check signature',() => expect(subCollection)
-      .to.have.all.keys('getName','getFQN','getDocument','deleteDocument','find','saveDocument','subCollection','copy'));
+      .to.have.all.keys('getName','getFQN','getDocument','deleteDocument','find','saveDocument','subCollection','copy','exists','getHead'));
 
     it('check Name', () => expect(subCollection.getName()).to.equal('test/child'));
     it('check FQN', () => expect(subCollection.getFQN()).to.have.property('name').that.equals('test/child'));
@@ -177,13 +187,27 @@ describe('Collection', () => {
     it('has id',() => expect(collection.saveDocument({id:'x'}))
       .to.eventually.be.an('object').with.deep.property('id').that.equals('x'));
 
-
     const noIdSave = collection.saveDocument({name:'poo'});
     it('id populated',() => expect(noIdSave)
       .to.eventually.be.an('object').with.deep.property('id'));
 
     it('name set',() => expect(noIdSave)
       .to.eventually.be.an('object').with.deep.property('name').that.equals('poo'));
+
+    it('name set',() => expect(noIdSave)
+      .to.eventually.be.an('object').with.deep.property('name').that.equals('poo'));
+
+    it('manipulate metadata to item',() => {
+      let manipulatorCollection = new Collection(fqn, new Config({
+          metadataUpdate:metadata=>{
+          metadata.added = true;
+          return metadata;
+        }
+      }), testProvider, testSerializer, testDocumentFactory);
+      return manipulatorCollection.saveDocument({name:'poo',id:'100'},{foo:'bar'}).then( result => {
+        return expect(result.getMetadata()).to.have.property('added').that.equals(true);
+      })
+    });
 
     const trickyId = collection.saveDocument({getId:'x',name:'poo'});
 
@@ -208,6 +232,24 @@ describe('Collection', () => {
     it('generate an id for the copied document to a custom attribute',() => expect(collection.saveDocument({name:'y'}))
       .to.eventually.be.an('object').with.deep.property('x').that.equals('x_y-z'));
 
+    it('collisionValidator on item',() => expect(new Collection(fqn, new Config({
+        'collideOnMissmatch': true,
+        'collisionValidator': (thisMetadata,thatMetadata,document) =>{
+          return true;
+        }
+      }), testProvider, testSerializer, testDocumentFactory).saveDocument({
+        getId: () => '123',
+        name:'y'
+      })) 
+      .to.eventually.be.rejectedWith('Collision, the document has been modified.'));
+
+      
+
+    it('add metadata to item',() => {
+      return collection.saveDocument({name:'poo',id:'100'},{foo:'bar'}).then( result => {
+        return expect(result.getMetadata()).to.have.property('foo').that.equals('bar');
+      })
+    });
   })
 
   describe('#copy()', () => {
@@ -227,11 +269,10 @@ describe('Collection', () => {
      *  target collection the document is being copied into.
      */
     it('Generated ID ',() => {
-
       const copiedDocument = thatCollection.saveDocument({name:'y'}).then( newDocument => thisCollection.copy(newDocument) )
-
       return expect(copiedDocument).to.eventually.be.an('object').with.deep.property('x').that.equals('x_y-z')
     });
+
     /*
      * The ID of the document should be updated based on the configuration of the new
      *  target collection the document is being copied into.

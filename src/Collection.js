@@ -35,20 +35,25 @@ const Collection = function(fqn,config,provider,serializer,DocumentFactory) {
    */
   const handleError = error => {
     switch (error.code) {
+
       case 'NoSuchBucket':
         return Promise.reject(`${fqn.prefix}${fqn.name} is not a valid bucket or is not visible/accssible.`);
+
       case 'NoSuchKey':
         if(!config.get('errorOnNotFound',false)) {
           return Promise.resolve();
         }
+
       default:
         return Promise.reject(error);
     }
   }
 
-  const idGenerator       = config.get('id.generator',() => Common.uuid());
-  const idPropertyName    = config.get('id.propertyName','id');
-  const documentValidator = config.get('validator', document => Promise.resolve(document) );
+  const idGenerator        = config.get('id.generator',() => Common.uuid());
+  const idPropertyName     = config.get('id.propertyName','id');
+  const documentValidator  = config.get('validator', document => Promise.resolve(document) );
+  const collisionValidator = config.get('collisionValidator');
+  const updateMetadata     = config.get('metadataUpdate', metadata => metadata);
 
   /*
    * Decorates a list of results with some convenience methods.
@@ -76,34 +81,46 @@ const Collection = function(fqn,config,provider,serializer,DocumentFactory) {
   }
 
   const isCollided = (document) => {
-    if(document.getId){
+
+    if(document.getId || document[idPropertyName]){
+
+      const id       = document.getId ? document.getId() : document[idPropertyName];
       const metadata = Utils.getMetaData(document);
-      return collectionProvider.getDocumentHead(fqn,document.getId())
+
+      return collectionProvider.getDocumentHead(fqn,id)
         .then( head => {
 
-          const targetMetaData = collectionProvider.buildDocumentMetaData(head);
+          const targetMetaData = head ? collectionProvider.buildDocumentMetaData(head) : null;
           let   hasChanged     = false;
 
           /*
-           * The targetMetaData comes from a headCheck on the object being
-           *  overwritten. So if the MD5 on the __meta of the current record
-           *  matches the target MD5, the underlying object is likely not
-           *  modified.
-           *
-           * Md5 does not always get returned.
-           */
-          if(targetMetaData.md5 && targetMetaData.md5 !== metadata.md5){
+          * Extension point that allows additional checking on the metadata of the document
+          *  and the corresponding documentHeader.
+          **/
+          if(collisionValidator){
+            hasChanged = collisionValidator(metadata,targetMetaData,document);
+          }
+
+          /*
+          * The targetMetaData comes from a headCheck on the object being
+          *  overwritten. So if the MD5 on the __meta of the current record
+          *  matches the target MD5, the underlying object is likely not
+          *  modified.
+          *
+          * Md5 does not always get returned.
+          */
+          if(!hasChanged && targetMetaData && targetMetaData.md5 && targetMetaData.md5 !== metadata.md5){
             hasChanged = true;
           }
 
-          if(targetMetaData.eTag !== metadata.eTag){
+          if(!hasChanged && targetMetaData && targetMetaData.eTag !== metadata.eTag){
             hasChanged = true;
           }
 
           if(hasChanged){
             return Promise.reject('Collision, the document has been modified.');
           }
-
+          
           return document;
         })
     }
@@ -138,11 +155,15 @@ const Collection = function(fqn,config,provider,serializer,DocumentFactory) {
     find: startsWith => collectionProvider.findDocuments(fqn,startsWith)
       .then( listResponse )
       .catch( handleError ),
+    exists: id => collectionProvider.getDocumentHead(fqn,id)
+      .then( head => head ? true : false ),
+    getHead: id => collectionProvider.getDocumentHead(fqn,id)
+      .then( head => head ? collectionProvider.buildDocumentMetaData(head) : null ) ,
     getDocument: id => collectionProvider.getDocument(fqn,id)
       .then( data => documentFactory.build(data,idPropertyName,collection))
       .catch( handleError ),
     deleteDocument: id => collectionProvider.deleteDocument(fqn,id).catch( handleError ),
-    saveDocument: documentToSave => Promise.resolve(documentToSave)
+    saveDocument: (documentToSave,argMetadata={}) => Promise.resolve(documentToSave)
       .then( document => !document ? Promise.reject("Cannot save undefined or null objects.") : document )
       .then( document => documentValidator(document) )
       .then( document => {
@@ -166,13 +187,11 @@ const Collection = function(fqn,config,provider,serializer,DocumentFactory) {
           fqn,
           id: document[idPropertyName],
           body: toWrite,
-          metaData: {
-            md5: Utils.signature(toWrite)
-          }
+          metadata: updateMetadata(argMetadata)
         }
       })
       .then( collectionProvider.putDocument )
-      .then( data =>  documentFactory.build(data,idPropertyName,collection) )
+      .then( data => documentFactory.build(data,idPropertyName,collection) )
       .catch( error => 'not-modified' === error ? Promise.resolve(documentToSave) : handleError(error) ),
   }
 
