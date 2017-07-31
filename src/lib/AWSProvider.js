@@ -37,7 +37,10 @@ module.exports = function(config){
   }
 
   const cleanDocumentMetadata = metadata => Object.keys(metadata)
-    .filter( key => !['MD5','md5','ContentMD5','Size','StorageClass','ContentLength','ServerSideEncryption','LastModified','ETag'].indexOf(key) )
+    .filter( key => {
+      let arr = ['md5','ContentMD5','Size','StorageClass','ContentLength','ServerSideEncryption','LastModified', 'eTag' , 'collection', 'collectionFQN']
+      return arr.findIndex(item => key.toLowerCase() === item.toLowerCase()) < 0;
+    })
     .reduce( (newMetadata,key) => {
       /*
        * Stringify all metadata and remove special characters. Special characters
@@ -45,9 +48,14 @@ module.exports = function(config){
        *  are valid for metadata (for S3.)
        * @see https://github.com/aws/aws-sdk-js/issues/86
        */
-      newMetadata[key] = metadata[key];
-      newMetadata[key] = typeof value === "string" ? newMetadata[key] : JSON.stringify(newMetadata[key]);
-      newMetadata[key] = Utils.removeDiacritics( newMetadata[key] )
+      //console.log(newMetadata)
+
+      let value = metadata[key];
+      newMetadata[key] = typeof value === "string" ? value : JSON.stringify(value);
+      newMetadata[key] = Utils.removeDiacritics( newMetadata[key] );
+
+      //console.log('reduce:', key, value)
+
       return newMetadata;
     },{} )
 

@@ -109,11 +109,13 @@ const Collection = function(fqn,config,provider,serializer,DocumentFactory) {
           *
           * Md5 does not always get returned.
           */
-          if(!hasChanged && targetMetaData && targetMetaData.md5 && targetMetaData.md5 !== metadata.md5){
+          if(!hasChanged && targetMetaData && targetMetaData.md5 && metadata && metadata.md5 && targetMetaData.md5 !== metadata.md5){
+            console.log('mismatch me5', targetMetaData.md5, metadata.md5)
             hasChanged = true;
           }
 
-          if(!hasChanged && targetMetaData && targetMetaData.eTag !== metadata.eTag){
+          if(!hasChanged && targetMetaData && metadata && metadata.eTag && targetMetaData.eTag !== metadata.eTag){
+            console.log('mismatch eTag', targetMetaData.eTag, metadata.eTag)
             hasChanged = true;
           }
 
@@ -164,6 +166,10 @@ const Collection = function(fqn,config,provider,serializer,DocumentFactory) {
       .catch( handleError ),
     deleteDocument: id => collectionProvider.deleteDocument(fqn,id).catch( handleError ),
     saveDocument: (documentToSave,argMetadata={}) => Promise.resolve(documentToSave)
+      .then( document => {
+        if (!Check.isFunction(document.getId) && Object.keys(argMetadata).length > 0) Utils.setMetaData(document, argMetadata)
+        return document
+      })
       .then( document => !document ? Promise.reject("Cannot save undefined or null objects.") : document )
       .then( document => documentValidator(document) )
       .then( document => {
