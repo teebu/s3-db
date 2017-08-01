@@ -167,7 +167,7 @@ const Collection = function(fqn,config,provider,serializer,DocumentFactory) {
     deleteDocument: id => collectionProvider.deleteDocument(fqn,id).catch( handleError ),
     saveDocument: (documentToSave,argMetadata={}) => Promise.resolve(documentToSave)
       .then( document => {
-        if (!Check.isFunction(document.getId) && Object.keys(argMetadata).length > 0) Utils.setMetaData(document, argMetadata)
+        if (document && !Check.isFunction(document.getId) && Object.keys(argMetadata).length > 0) Utils.setMetaData(document, argMetadata)
         return document
       })
       .then( document => !document ? Promise.reject("Cannot save undefined or null objects.") : document )
