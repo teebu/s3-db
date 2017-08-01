@@ -37,10 +37,7 @@ module.exports = function(config){
   }
 
   const cleanDocumentMetadata = metadata => Object.keys(metadata)
-    .filter( key => {
-      let arr = ['md5','ContentMD5','Size','StorageClass','ContentLength','ServerSideEncryption','LastModified', 'eTag' , 'collection', 'collectionFQN']
-      return arr.findIndex(item => key.toLowerCase() === item.toLowerCase()) < 0;
-    })
+    .filter( key => !['md5','contentmd5','collectionfqn','collection','size','storageclass','contentlength','serversideencryption','lastmodified','etag','encryption','lastmodified'].includes(key.toLowerCase()) )
     .reduce( (newMetadata,key) => {
       /*
        * Stringify all metadata and remove special characters. Special characters
@@ -189,8 +186,6 @@ module.exports = function(config){
         
         if(request.metadata){
           params.Metadata = cleanDocumentMetadata(request.metadata);
-        } else {
-          params.ContentMD5 = Utils.signature(request.body);
         }
        
         if(getCollectionConfig(request.fqn).get('encryption',true)) params.ServerSideEncryption = 'AES256';

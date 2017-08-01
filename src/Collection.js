@@ -193,7 +193,7 @@ const Collection = function(fqn,config,provider,serializer,DocumentFactory) {
           fqn,
           id: document[idPropertyName],
           body: toWrite,
-          metadata: updateMetadata(argMetadata)
+          metadata: updateMetadata(document, argMetadata)
         }
       })
       .then( collectionProvider.putDocument )
@@ -203,5 +203,6 @@ const Collection = function(fqn,config,provider,serializer,DocumentFactory) {
 
   return collection;
 }
+
 
 module.exports = Collection;
