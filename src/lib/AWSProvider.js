@@ -17,7 +17,8 @@ module.exports = function(config){
   const region                = config.get('provider.region');
   const accessKeyId           = config.get('provider.accessKeyId');
   const secretAccessKey       = config.get('provider.secretAccessKey');
-  const s3                    = new AWS.S3({region,accessKeyId,secretAccessKey});
+  const httpOptions           = config.get('db.httpOptions');
+  const s3                    = new AWS.S3({region,accessKeyId,secretAccessKey,httpOptions});
   const bucketName            = fqn => fqn.name.indexOf('/') === -1 ? `${fqn.prefix}${fqn.name}` : `${fqn.prefix}${fqn.name.substring(0,fqn.name.indexOf('/'))}`;
   const getId                 = (fqn,id) => fqn.name.indexOf('/') === -1 ? id : `${fqn.name.substring(fqn.name.indexOf('/')+1)}/${id}`;
   const getCollectionConfig   = fqn => Utils.getCollectionConfig(fqn,config);

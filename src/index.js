@@ -11,7 +11,8 @@ module.exports = function(overrides){
     db: {
       name: process.env['S3DB_NAME'] || 's3-db',
       environment: process.env['STAGE'] || process.env['AWS_LAMBDA_FUNCTION_VERSION'] || 'dev',
-      namePattern: '${db.name}.${db.environment}-${name}'
+      namePattern: '${db.name}.${db.environment}-${name}',
+      httpOptions: {timeout: 120000}
     },
     provider: {
       name: 'aws-s3',
